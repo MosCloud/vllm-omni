@@ -210,7 +210,6 @@ router = APIRouter()
 
 VIDEO_ABORT_TIMEOUT_S = ABORT_TIMEOUT_S
 _VIDEO_TASK_CANCEL_TIMEOUT_S = 5.0
-
 profiler_router = APIRouter()
 
 
