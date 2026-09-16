@@ -234,30 +234,51 @@ def _patch_video_artifacts(monkeypatch, handler, artifacts):
 
 
 @pytest.mark.parametrize(
-    "video",
+    ("video", "frame_conversion_workers", "expected_path"),
     [
-        np.transpose(np.zeros((3, 2, 4, 4), dtype=np.uint8), (1, 2, 3, 0)),
-        np.zeros((2, 4, 6, 3), dtype=np.uint8),
+        pytest.param(
+            np.transpose(np.zeros((3, 2, 4, 4), dtype=np.uint8), (1, 2, 3, 0)),
+            8,
+            "direct_planar",
+            id="direct-planar",
+        ),
+        pytest.param(
+            np.zeros((2, 4, 6, 3), dtype=np.uint8),
+            1,
+            "legacy_fallback",
+            id="legacy-fallback",
+        ),
     ],
-    ids=["direct-planar", "legacy-fallback"],
 )
 @pytest.mark.asyncio
-async def test_raw_encoding_offloads_both_auto_routes(monkeypatch, video_handler, video):
+async def test_raw_encoding_offloads_both_auto_routes(monkeypatch, video, frame_conversion_workers, expected_path):
+    monkeypatch.setattr(serving_video, "_VIDEO_RESPONSE_FRAME_CONVERSION_WORKERS", frame_conversion_workers)
+    video_handler = _make_video_handler()
     artifacts = _video_artifacts([video])
     event_loop_thread = threading.get_ident()
     encoder_threads = []
+    selected_paths = []
 
     def encode(video, *, fps, **kwargs):
         encoder_threads.append(threading.get_ident())
         return video_api_utils._encode_video_bytes(video, fps=fps, **kwargs)
 
-    _patch_video_artifacts(monkeypatch, video_handler, artifacts)
-    monkeypatch.setattr(serving_video, "_encode_video_bytes", encode)
+    try:
+        _patch_video_artifacts(monkeypatch, video_handler, artifacts)
+        monkeypatch.setattr(serving_video, "_encode_video_bytes", encode)
+        monkeypatch.setattr(
+            video_api_utils,
+            "_log_video_encoding_path",
+            lambda **kwargs: selected_paths.append(kwargs["selected_path"]),
+        )
 
-    video_bytes, *_ = await video_handler.generate_video_bytes(VideoGenerationRequest(prompt="test"), "raw-request")
+        video_bytes, *_ = await video_handler.generate_video_bytes(VideoGenerationRequest(prompt="test"), "raw-request")
+    finally:
+        video_handler.shutdown()
 
     assert video_bytes
     assert encoder_threads and all(thread != event_loop_thread for thread in encoder_threads)
+    assert selected_paths == [expected_path]
 
 
 @pytest.mark.asyncio
