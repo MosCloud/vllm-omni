@@ -236,14 +236,6 @@ class OmniOpenAIServingVideo:
         elapsed_ms = (time.perf_counter() - started_at) * 1000
         return result, elapsed_ms
 
-    def shutdown(self) -> None:
-        """Stop new response encodes and join the dedicated encoding thread."""
-        executor = self._video_response_encoding_executor
-        self._video_response_encoding_executor = None
-        if executor is not None:
-            executor.shutdown(wait=True, cancel_futures=True)
-        self._video_frame_converter.shutdown()
-
     @cached_property
     def preserves_reference_image_size(self) -> bool:
         """Return whether the active pipeline owns reference-image resizing."""
